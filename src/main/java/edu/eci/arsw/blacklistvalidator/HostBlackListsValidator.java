@@ -29,9 +29,38 @@ public class HostBlackListsValidator {
      * @param ipaddress suspicious host's IP address.
      * @return  Blacklists numbers where the given host's IP address was found.
      */
-    public List<Integer> checkHost(String ipaddress){
+    public List<Integer> checkHost(String ipaddress,int numHilos){
         
+        ListaServidoresThread [] hilos = new ListaServidoresThread[numHilos]; 
+        HostBlacklistsDataSourceFacade skds=HostBlacklistsDataSourceFacade.getInstance();
+
+        //tamano seccion = tamano region / numero de hilos
+        int tamanoSeccion = (int) (Math.ceil(skds.getRegisteredServersCount()/numHilos));
+        for (int i = 0; i < numHilos; i++) {
+            hilos[i] = new ListaServidoresThread(
+                        i*tamanoSeccion, 
+                        (i<numHilos-1) ? (i+1)*tamanoSeccion :skds.getRegisteredServersCount(), 
+                        ipaddress);
+            hilos[i].start();
+        }
+
+        int ocurrencesCount=0;
+        int checkedListsCount=0;
         LinkedList<Integer> blackListOcurrences=new LinkedList<>();
+
+        for(ListaServidoresThread h: hilos){
+            try {
+                h.join();
+                ocurrencesCount += h.getCanOcurrencias();
+                checkedListsCount += h.getCantServidores();
+                blackListOcurrences.addAll(h.getBlackListOcurrences());
+            } catch (InterruptedException ex) {
+                Logger.getLogger(HostBlackListsValidator.class.getName()).log(Level.SEVERE, null, ex);
+                h.interrupt();
+            }
+        }
+
+       /* LinkedList<Integer> blackListOcurrences=new LinkedList<>();
         
         int ocurrencesCount=0;
         
@@ -48,7 +77,8 @@ public class HostBlackListsValidator {
                 
                 ocurrencesCount++;
             }
-        }
+        }*/
+
         
         if (ocurrencesCount>=BLACK_LIST_ALARM_COUNT){
             skds.reportAsNotTrustworthy(ipaddress);
@@ -60,6 +90,7 @@ public class HostBlackListsValidator {
         LOG.log(Level.INFO, "Checked Black Lists:{0} of {1}", new Object[]{checkedListsCount, skds.getRegisteredServersCount()});
         
         return blackListOcurrences;
+
     }
     
     
